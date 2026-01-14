@@ -1,0 +1,73 @@
+name: Build eCaptureBurp Extension
+
+# 触发条件：推送到main分支 或 对main分支发起PR
+on:
+  push:
+    branches: [ main ]
+    # 仅监控核心代码变更，避免无效构建
+    paths:
+      - '**.java'
+      - 'build.gradle*'
+      - 'gradle/**'
+      - '.github/workflows/**'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - '**.java'
+      - 'build.gradle*'
+      - 'gradle/**'
+      - '.github/workflows/**'
+
+jobs:
+  build:
+    # 指定运行环境为最新版Ubuntu
+    runs-on: ubuntu-latest
+    # 赋予必要权限（上传产物需要）
+    permissions:
+      contents: read
+      actions: read
+
+    steps:
+      # 1. 检出仓库代码
+      - name: Checkout repository code
+        uses: actions/checkout@v4
+
+      # 2. 配置JDK 17环境（Gradle缓存已启用）
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: gradle
+
+      # 3. 赋予gradlew可执行权限（Linux环境必需）
+      - name: Make gradlew executable
+        run: chmod +x ./gradlew
+
+      # 4. 使用Gradle构建JAR包（跳过测试加速构建）
+      - name: Build JAR package with Gradle
+        run: ./gradlew clean jar -x test
+        # 捕获构建错误，方便排查
+        continue-on-error: false
+
+      # 5. 验证JAR包是否生成（可选但建议保留，便于排查问题）
+      - name: Verify JAR file exists
+        run: |
+          if [ -f "build/libs/ecapture-burp-extension-1.0.0.jar" ]; then
+            echo "✅ JAR包构建成功：build/libs/ecapture-burp-extension-1.0.0.jar"
+            ls -lh build/libs/
+          else
+            echo "❌ JAR包未找到，构建失败"
+            exit 1
+          fi
+
+      # 6. 上传JAR包作为构建产物
+      - name: Upload JAR build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          # 产物名称（在Actions页面显示）
+          name: ecapture-burp-extension
+          # JAR包路径（请确认与项目实际生成的文件名一致）
+          path: build/libs/ecapture-burp-extension-1.0.0.jar
+          # 保留90天（默认仅保留90天，可根据需要调整）
+          retention-days: 90
