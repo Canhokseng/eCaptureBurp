@@ -1,0 +1,64 @@
+name: Build Burp Plugin JAR
+
+# 触发条件：推送到main分支、创建Release、手动触发
+on:
+  push:
+    branches: [ main, master ]
+    paths:
+      - '**.java'
+      - 'pom.xml'
+      - 'build.gradle*'
+      - '.github/workflows/**'
+  release:
+    types: [created]
+  workflow_dispatch: # 允许手动触发
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # 允许上传产物到Release
+
+    steps:
+      # 1. 检出代码
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # 2. 配置JDK环境（根据项目实际使用的Java版本调整，Burp插件通常用8/11）
+      - name: Set up JDK 11
+        uses: actions/setup-java@v4
+        with:
+          java-version: '11'
+          distribution: 'temurin'
+          cache: maven # 如果用Gradle则改为gradle
+
+      # 3. 构建JAR包（根据项目构建工具选择Maven/Gradle）
+      - name: Build with Maven
+        run: mvn clean package -DskipTests
+        # 如果项目用Gradle，替换为：
+        # run: ./gradlew clean build shadowJar -x test
+
+      # 4. 查找生成的JAR包（适配常见的输出路径）
+      - name: Locate JAR file
+        id: find_jar
+        run: |
+          # 查找target目录下的JAR包（排除sources/javadoc包）
+          JAR_PATH=$(find ./ -name "*.jar" -path "*/target/*" ! -name "*-sources.jar" ! -name "*-javadoc.jar" | head -n 1)
+          echo "jar_path=$JAR_PATH" >> $GITHUB_OUTPUT
+          echo "jar_name=$(basename $JAR_PATH)" >> $GITHUB_OUTPUT
+
+      # 5. 上传JAR包作为构建产物
+      - name: Upload JAR artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.find_jar.outputs.jar_name }}
+          path: ${{ steps.find_jar.outputs.jar_path }}
+
+      # 6. 如果是Release触发，将JAR包附加到Release
+      - name: Upload JAR to Release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ steps.find_jar.outputs.jar_path }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
